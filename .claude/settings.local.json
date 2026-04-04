@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__airis-mcp-gateway__airis-find",
+      "mcp__airis-mcp-gateway__airis-suggest",
+      "mcp__advanced-hwp__open_document"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "advanced-hwp"
+  ]
+}

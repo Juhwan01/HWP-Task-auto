@@ -1,0 +1,67 @@
+{
+  "name": "강선미",
+  "birth_date": "1993년 4월 20일",
+  "disability": "지적장애 3급",
+  "department": "세탁서비스사업부",
+  "job": "세탁물 건조",
+  "case_manager": "고경숙",
+  "address": "제주시 516로 3080번지 아라이도빌리지 C동 112호",
+  "phone": "010 - 5205 - 4103",
+
+  "base_year": 2024,
+  "target_year": 2025,
+  "eval_date": "2025년 10월 04일",
+  "eval_date_dot": "2025. 10. 04.",
+
+  "scores": {
+    "prev_year": {
+      "rules":         [50, 50],
+      "attitude":      [100, 110],
+      "communication": [80, 90],
+      "skills":        [40, 40]
+    },
+    "curr_year": {
+      "rules":         [50, 50],
+      "attitude":      [101, 110],
+      "communication": [82, 90],
+      "skills":        [40, 40]
+    }
+  },
+
+  "long_term_goal": "의사소통/대인관계영역 향상",
+  "short_term_goals": [
+    "어려운 일에 처했을 때 관리자와 동료에게 도움을 구한다",
+    "본인의 의사를 분명하고 적절하게 표현한다"
+  ],
+
+  "staff": {
+    "director": "고승희",
+    "secretary": "김남근",
+    "manager": "김정배",
+    "trainer": "고경숙"
+  },
+
+  "counseling_dates": [
+    {"date": "2025년 2월 17일", "time": "13:40 - 14:00", "purpose": "고충상담"},
+    {"date": "2025년 5월 22일", "time": "10:10 - 10:30", "purpose": "고충상담"},
+    {"date": "2025년 8월 12일", "time": "14:20 - 14:40", "purpose": "사례관리"}
+  ],
+
+  "templates": {
+    "01_eval_plan":      "1.{base_year}년 {name} 직업평가계획서.hwp",
+    "02_counseling":     "{base_year}년도 {name} 상담기록지.hwp",
+    "03_rehab_consult":  "3.{base_year}년 {name} 직업재활계획수립상담.hwp",
+    "04_eval_report":    "4.{base_year}년 {name} 직업평가보고서.hwp",
+    "05_case_meeting":   "5.{base_year}년 {name} 직업재활수립 사례회의록.hwp",
+    "06_rehab_plan":     "6.{base_year}년 {name} 직업재활계획서.hwp"
+  },
+
+  "outputs": {
+    "01_eval_plan":      "1.{target_year}년 {name} 직업평가계획서.hwp",
+    "02_counseling":     "{target_year}년도 {name} 상담기록지.hwp",
+    "03_rehab_consult":  "3.{target_year}년 {name} 직업재활계획수립상담.hwp",
+    "04_eval_report":    "4.{target_year}년 {name} 직업평가보고서.hwp",
+    "05_case_meeting":   "5.{target_year}년 {name} 직업재활수립 사례회의록.hwp",
+    "06_rehab_plan":     "6.{target_year}년 {name} 직업재활계획서.hwp"
+  }
+}

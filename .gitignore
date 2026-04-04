@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+output/
+hwp_mcp.log
+test_output.hwp
+.mcp.json
