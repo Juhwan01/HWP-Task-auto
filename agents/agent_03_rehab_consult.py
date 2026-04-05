@@ -1,14 +1,13 @@
 """에이전트 03: 직업재활계획수립상담.
 
-2025 현장평가 데이터를 분석하여 상담내용을 새로 작성한다.
+2025 현장평가 파싱 데이터를 기반으로 상담내용을 새로 작성한다.
+Data-Grounded Generation: 팩트만 전달, 원문 없음.
 """
-import json
-import os
 from agents.base import (
     load_config, template_path, output_path, txt_output_path,
-    save_txt, load_reference_text, score_summary, pct_str,
-    build_narrative_replacements, parse_ai_blocks, replace_blocks, BASE_DIR,
+    save_txt, build_narrative_replacements, parse_ai_blocks, replace_blocks,
 )
+from core.eval_parser import load_eval_parsed, format_for_prompt, compare_years
 
 OLD_BLOCKS = {
     'consult_content': '-직업재활계획수립을 위한 상담임을 알려주며, 지난 10월 4일 실시한 현장평가에 대한 상담을 진행 함.',
@@ -20,37 +19,43 @@ OLD_BLOCKS = {
 def run(cfg, hwp, ai):
     src = template_path(cfg, '03_rehab_consult')
     dst = output_path(cfg, '03_rehab_consult')
-    by = cfg['base_year']
     ty = cfg['target_year']
-    prev = cfg['scores']['prev_year']
-    curr = cfg['scores']['curr_year']
+    by = cfg['base_year']
 
-    with open(os.path.join(BASE_DIR, 'extracted_com.json'), 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    eval_2025 = data.get(f'2.{ty}년 {cfg["name"]} 현장평가.hwp', '')
-
-    ref_text = load_reference_text(cfg, '03_rehab_consult')
+    # 파서로 팩트 추출
+    parsed_curr = load_eval_parsed(ty)
+    parsed_prev = load_eval_parsed(by)
+    facts = format_for_prompt(parsed_curr)
+    changes = compare_years(parsed_prev, parsed_curr) if parsed_prev else ''
 
     prompt = f"""당신은 직업훈련교사 {cfg['case_manager']}입니다.
 {cfg['name']}씨의 {ty}년도 직업재활계획수립상담 기록을 작성하세요.
 
-=== {ty}년 현장평가 원본 데이터 (직접 분석하세요) ===
-{eval_2025}
+=== {ty}년 현장평가 팩트 (이 데이터만 근거로 쓰세요) ===
+{facts}
 
-=== 전년도({by}년) 점수 ===
-작업태도: {prev['attitude'][0]}/{prev['attitude'][1]}, 의사소통: {prev['communication'][0]}/{prev['communication'][1]}
+=== 전년도({by}년) 대비 변화 ===
+{changes}
 
-=== 문체 참고 (톤만 참고, 문장은 새로) ===
-"{ref_text[:200]}"
+=== 대상자 배경 ===
+- {cfg['disability']}, {cfg['department']} {cfg['job']} 담당
+- {cfg.get('hire_year', 2015)}년 입사, 현재까지 동일 직무 수행
+- 장기목표: {cfg['long_term_goal']}
+- 단기목표: {', '.join(cfg['short_term_goals'])}
+
+=== 문체 규칙 ===
+- 상담내용/결과: "~함", "~보임", "~있음" 등 보고서체
+- 슈퍼비전: "~합니다", "~필요합니다" 등 존대체
+- 점수 표기: "90점중 82점을 얻어 91%" 형식
 
 === 작성 지시 ===
-{ty}년 10월 15일에 진행한 직업재활계획수립상담 내용을 새로 작성하세요.
+{ty}년 10월 15일에 진행한 직업재활계획수립상담입니다.
 10월 4일 실시한 현장평가 결과를 바탕으로 상담한 내용입니다.
 
-중요: 이전 상담 기록을 복사하지 마세요. {ty}년 현장평가 데이터를 분석하여 새로 쓰세요.
-- 현장평가에서 어떤 항목이 높고 어떤 항목이 낮은지 구체적으로 분석
-- {by}년 대비 개선된 점, 여전히 부족한 점 언급
-- 상담 분위기와 대상자 반응도 포함
+- 현장평가에서 5점(강점) 항목과 4점/3점(개선필요) 항목을 구체적으로 언급
+- 전년도 대비 개선된 점(의사소통 +2점 등)과 여전히 부족한 점 서술
+- 직무기술은 이미 높으므로 직업유지에 초점을 맞춘 목표 설정 방향 제시
+- 상담 분위기와 대상자 반응도 자연스럽게 포함
 
 [블록:consult_content] 상담내용 전체 (상담 진행 과정과 현장평가 결과 논의)
 [블록:consult_result] 상담결과 및 지원계획

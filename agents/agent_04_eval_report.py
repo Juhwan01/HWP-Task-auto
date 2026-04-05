@@ -1,15 +1,13 @@
 """에이전트 04: 직업평가보고서.
 
-2025 현장평가 데이터를 직접 분석하여 서술을 새로 작성한다.
-2024 문서는 문체/톤 참고용으로만 사용.
+2025 현장평가 파싱 데이터를 기반으로 서술을 새로 작성한다.
+Data-Grounded Generation: 팩트만 전달, 원문 없음.
 """
-import json
-import os
 from agents.base import (
     load_config, template_path, output_path, txt_output_path,
-    save_txt, load_reference_text, calc_pct, pct_str,
-    build_narrative_replacements, parse_ai_blocks, replace_blocks, BASE_DIR,
+    save_txt, build_narrative_replacements, parse_ai_blocks, replace_blocks,
 )
+from core.eval_parser import load_eval_parsed, format_for_prompt, compare_years
 
 # 2024 원문 (find_replace 대상)
 OLD_BLOCKS = {
@@ -23,56 +21,65 @@ OLD_BLOCKS = {
 }
 
 
-def _load_eval_2025(cfg):
-    """2025 현장평가 텍스트 로드."""
-    with open(os.path.join(BASE_DIR, 'extracted_com.json'), 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    return data.get(f'2.{cfg["target_year"]}년 {cfg["name"]} 현장평가.hwp', '')
-
-
 def run(cfg, hwp, ai):
     src = template_path(cfg, '04_eval_report')
     dst = output_path(cfg, '04_eval_report')
-    by = cfg['base_year']
     ty = cfg['target_year']
-    prev = cfg['scores']['prev_year']
-    curr = cfg['scores']['curr_year']
+    by = cfg['base_year']
 
-    eval_2025 = _load_eval_2025(cfg)
+    # 파서로 팩트 추출
+    parsed_curr = load_eval_parsed(ty)
+    parsed_prev = load_eval_parsed(by)
+    facts = format_for_prompt(parsed_curr)
+    changes = compare_years(parsed_prev, parsed_curr) if parsed_prev else ''
 
-    # 톤 참고용 샘플 (짧게만)
-    tone_sample = """다음은 이전 보고서의 문체 예시입니다. 이 톤(~함, ~보임, ~있음 등)으로 쓰되 문장 자체는 새로 쓰세요:
-"현장평가 결과 강선미씨의 경우 전체 평균 수행점수 100점중 93점의 높은 점수를 받았음."
-"강선미씨의 경우 직무기술 분야중 세탁물 건조 업무를 계속 수행해 왔기 때문에 수행율이 높게 나옴."
-"향후 직업재활계획수립시 문제점을 보였던 의사소통 및 대인관계 영역 개선을 장기목표로 설정할 필요가 있음." """
+    # 의사소통 영역 약점 항목 상세 추출
+    comm_section = parsed_curr['sections'].get('의사소통', {})
+    weak_items = [it for it in comm_section.get('items', []) if it['score'] <= 3]
+    moderate_items = [it for it in comm_section.get('items', []) if it['score'] == 4]
+    weak_detail = '\n'.join(f"  - {it['text']} ({it['score']}점)" for it in weak_items)
+    moderate_detail = '\n'.join(f"  - {it['text']} (4점)" for it in moderate_items)
 
     prompt = f"""당신은 장애인 직업재활시설의 직업훈련교사 {cfg['case_manager']}입니다.
 {cfg['name']}씨({cfg['disability']}, {cfg['department']} {cfg['job']})의 {ty}년도 직업평가보고서 서술 부분을 작성하세요.
 
-=== {ty}년 현장평가 원본 데이터 (이것을 직접 분석하세요) ===
-{eval_2025}
+=== {ty}년 현장평가 팩트 (이 데이터만 근거로 쓰세요) ===
+{facts}
 
-=== 전년도({by}년) 점수 (비교용) ===
-작업규칙: {prev['rules'][0]}/{prev['rules'][1]}, 작업태도: {prev['attitude'][0]}/{prev['attitude'][1]}, 의사소통/대인관계: {prev['communication'][0]}/{prev['communication'][1]}, 직무기술: {prev['skills'][0]}/{prev['skills'][1]}
+=== 전년도({by}년) 대비 변화 ===
+{changes}
 
-=== {tone_sample} ===
+=== 의사소통 영역 상세 ===
+약점(3점 이하):
+{weak_detail or '  (없음)'}
+보통(4점):
+{moderate_detail or '  (없음)'}
+
+=== 대상자 배경 ===
+- {cfg.get('hire_year', 2015)}년 입사, {cfg['job']} 직무 계속 수행
+- 장기목표: {cfg['long_term_goal']}
+- 단기목표: {', '.join(cfg['short_term_goals'])}
+
+=== 문체 규칙 ===
+- 보고서체: "~함", "~보임", "~있음", "~사료됨" 등
+- 점수 표기: "총점 90점중 82점을 얻어 91%의 수행율을 보임" 형식
+- 전체 평균: "100점중 94점" 형식 (총점/총만점을 100점 기준으로 환산)
 
 === 작성 지시 ===
-위 {ty}년 현장평가 데이터를 직접 분석하여 아래 7개 블록을 작성하세요.
+아래 7개 블록을 현장평가 팩트에 근거하여 새로 작성하세요.
+- 각 영역의 점수와 수행율을 정확히 인용
+- 어떤 항목이 만점(5점)이고 어떤 항목이 4점/3점인지 구체적으로 분석
+- 전년도 대비 개선/유지/하락 영역을 명확히 구분
+- 직무기술은 높으므로 직업유지 초점의 목표 설정 방향 제시
+- 의사소통 약점 항목(3점)을 구체적으로 언급하며 개선 필요성 서술
 
-중요: 2024년 보고서를 복사하지 마세요. {ty}년 데이터를 보고 새로 분석하여 쓰세요.
-- {ty}년 결과에서 어떤 항목이 5점(만점)이고 어떤 항목이 4점/3점인지 구체적으로 분석
-- {by}년 대비 어떤 영역이 개선/유지/하락했는지 해석
-- 개선된 부분은 긍정적으로 언급하고, 여전히 부족한 부분은 지속 관리 필요성 서술
-- 문체만 위 톤 참고 예시를 따르고, 문장 구조와 내용은 새로 쓰세요
-
-[블록:eval_narrative] 현장평가 결과 분석 서술 (영역별 점수와 특징)
-[블록:eval_analysis] 직무기술 분석 및 향후 목표 방향 설정
-[블록:eval_issue] 의사소통/대인관계 영역의 구체적 문제점과 개선 필요성
+[블록:eval_narrative] 현장평가 결과 분석 서술 (영역별 점수와 수행율)
+[블록:eval_analysis] 직무기술 분석 및 목표 방향 설정
+[블록:eval_issue] 의사소통/대인관계 영역 문제점과 개선 필요성
 [블록:eval_shortgoal] 장기목표 기반 단기목표 설정
-[블록:progress_detail] 진전도 평가 (영역별 전년도 대비 변화 분석)
+[블록:progress_detail] 진전도 평가 (영역별 전년도 대비 변화)
 [블록:progress_overall] 진전도 종합 분석 (개선점과 지속 과제)
-[블록:progress_summary] 전체 연도간 비교 종합 정리"""
+[블록:progress_summary] 전체 연도간 비교 종합 정리 ({by}년 {parsed_prev['summary']['total_pct'] if parsed_prev else 'N/A'}%에서 {ty}년 {parsed_curr['summary']['total_pct']}%)"""
 
     result = ai.generate(prompt)
 
