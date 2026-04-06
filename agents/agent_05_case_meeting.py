@@ -100,12 +100,5 @@ def run(cfg, hwp, ai):
 
 
 if __name__ == '__main__':
-    from core.hwp_engine import HwpEngine
-    from core.ai_engine import AiEngine
-    cfg = load_config()
-    hwp = HwpEngine()
-    ai = AiEngine()
-    try:
-        print(run(cfg, hwp, ai))
-    finally:
-        hwp.quit()
+    from agents.base import run_standalone
+    run_standalone(run, needs_ai=True)

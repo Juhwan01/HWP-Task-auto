@@ -41,10 +41,5 @@ def run(cfg, hwp, ai=None):
 
 
 if __name__ == '__main__':
-    from core.hwp_engine import HwpEngine
-    cfg = load_config()
-    hwp = HwpEngine()
-    try:
-        print(run(cfg, hwp))
-    finally:
-        hwp.quit()
+    from agents.base import run_standalone
+    run_standalone(run)

@@ -299,6 +299,28 @@ def score_summary(cfg, year_key='curr_year'):
     return '\n'.join(lines)
 
 
+def run_standalone(run_fn, needs_ai=False):
+    """에이전트 단독 실행용 헬퍼. __main__ 블록 중복을 제거한다.
+
+    Args:
+        run_fn: 에이전트의 run(cfg, hwp[, ai]) 함수
+        needs_ai: True이면 AiEngine도 생성하여 전달
+    """
+    from core.hwp_engine import HwpEngine
+
+    cfg = load_config()
+    hwp = HwpEngine()
+    try:
+        if needs_ai:
+            from core.ai_engine import AiEngine
+            ai = AiEngine()
+            print(run_fn(cfg, hwp, ai))
+        else:
+            print(run_fn(cfg, hwp))
+    finally:
+        hwp.quit()
+
+
 def build_narrative_replacements(cfg):
     """서술문 안의 모든 점수/팩트 참조를 교체하는 replacement 쌍 목록 생성.
 
@@ -354,16 +376,9 @@ def build_narrative_replacements(cfg):
         # === 3. 총점 숫자 ===
         (f'{p_total}점', f'{c_total}점'),
 
-        # === 4. 날짜 ===
-        (f'{by}년 10월 04일', f'{ty}년 10월 04일'),
-        (f'{by}년 10월 28일', f'{ty}년 10월 28일'),
-        (f'{by}년 10월 15일', f'{ty}년 10월 15일'),
-        (f'{by}년  10월 15일', f'{ty}년  10월 15일'),
-        (f'{by}년  10월  18일', f'{ty}년  10월  18일'),
-        (f'{by}.  10.  31.', f'{ty}.  10.  31.'),
-        (f'{by}. 10. 04.', f'{ty}. 10. 04.'),
-        (f'{by}. 10. 02.', f'{ty}. 10. 02.'),
-        (f'{by}.  10.  02.', f'{ty}.  10.  02.'),
+        # === 4. 날짜 (config.json narrative_dates / narrative_dates_dot) ===
+        *[(f'{by}년{d}', f'{ty}년{d}') for d in cfg.get('narrative_dates', [])],
+        *[(f'{by}.{d}', f'{ty}.{d}') for d in cfg.get('narrative_dates_dot', [])],
 
         # === 5. 진전도 표 연도 헤더 ===
         (f'{by - 1}년 수행율', f'{by}년 수행율'),
