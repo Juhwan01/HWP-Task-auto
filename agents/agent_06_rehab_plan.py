@@ -1,13 +1,15 @@
 """에이전트 06: 직업재활계획서 (FindReplace only)."""
 from agents.base import (
     load_config, template_path, output_path, calc_pct, pct_str,
-    build_narrative_replacements,
+    build_narrative_replacements, enrich_cfg_from_eval,
 )
 
 
 def run(cfg, hwp, ai=None):
     src = template_path(cfg, '06_rehab_plan')
     dst = output_path(cfg, '06_rehab_plan')
+
+    cfg = enrich_cfg_from_eval(cfg)
     by = cfg['base_year']
     ty = cfg['target_year']
     ny = ty + 1

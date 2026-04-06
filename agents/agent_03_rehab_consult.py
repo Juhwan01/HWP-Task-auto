@@ -1,19 +1,15 @@
 """에이전트 03: 직업재활계획수립상담.
 
-2025 현장평가 파싱 데이터를 기반으로 상담내용을 새로 작성한다.
+현장평가 파싱 데이터를 기반으로 상담내용을 새로 작성한다.
 Data-Grounded Generation: 팩트만 전달, 원문 없음.
 """
 from agents.base import (
     load_config, template_path, output_path, txt_output_path,
     save_txt, build_narrative_replacements, parse_ai_blocks, replace_blocks,
+    load_eval_facts, enrich_cfg_from_eval, load_old_blocks,
 )
-from core.eval_parser import load_eval_parsed, format_for_prompt, compare_years
 
-OLD_BLOCKS = {
-    'consult_content': '-직업재활계획수립을 위한 상담임을 알려주며, 지난 10월 4일 실시한 현장평가에 대한 상담을 진행 함.',
-    'consult_result': '-현재 강선미씨는 세탁물건조업무에 만족하고 있으며, 직업유지에 맞춰 목표를 설정   할 필요가 있음.',
-    'consult_supervision': '-강선미님의 내성적인 성향으로 대화를 하는 동료들이 많지 않은것 같습니다. 다양한 동료들과 대화를 할수 있도록 관찰 및 지도가 필요합니다.',
-}
+OLD_BLOCKS = load_old_blocks('agent_03')
 
 
 def run(cfg, hwp, ai):
@@ -22,11 +18,10 @@ def run(cfg, hwp, ai):
     ty = cfg['target_year']
     by = cfg['base_year']
 
-    # 파서로 팩트 추출
-    parsed_curr = load_eval_parsed(ty)
-    parsed_prev = load_eval_parsed(by)
-    facts = format_for_prompt(parsed_curr)
-    changes = compare_years(parsed_prev, parsed_curr) if parsed_prev else ''
+    cfg = enrich_cfg_from_eval(cfg)
+    ef = load_eval_facts(cfg)
+    facts = ef['facts']
+    changes = ef['changes']
 
     prompt = f"""당신은 직업훈련교사 {cfg['case_manager']}입니다.
 {cfg['name']}씨의 {ty}년도 직업재활계획수립상담 기록을 작성하세요.

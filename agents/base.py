@@ -1,4 +1,12 @@
-"""에이전트 공통 베이스 모듈."""
+"""에이전트 공통 베이스 모듈.
+
+주요 함수:
+- load_config, template_path, output_path: 설정/경로 유틸
+- parse_ai_blocks, replace_blocks: AI 블록 파싱 및 HWP 교체
+- load_eval_facts: 현장평가 팩트 로드 (mode='both'|'prev_only')
+- enrich_cfg_from_eval: eval_parser 결과로 cfg scores 자동 동기화
+- build_narrative_replacements: 서술문 점수/날짜 교체 쌍 생성
+"""
 import json
 import os
 import sys
@@ -39,6 +47,13 @@ def save_txt(path, content):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w', encoding='utf-8') as f:
         f.write(content)
+
+
+def load_old_blocks(agent_name):
+    """old_blocks/{agent_name}.json에서 OLD_BLOCKS를 로드."""
+    path = os.path.join(BASE_DIR, 'old_blocks', f'{agent_name}.json')
+    with open(path, 'r', encoding='utf-8') as f:
+        return json.load(f)
 
 
 def parse_ai_blocks(text, expected_keys=None):
@@ -110,12 +125,157 @@ def replace_blocks(hwp, old_blocks, generated, label='', ai=None, prompt=''):
     return failed
 
 
-def load_reference_text(cfg, key):
-    json_path = os.path.join(BASE_DIR, 'extracted_com.json')
-    with open(json_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    filename = resolve_path(cfg['templates'][key], cfg)
-    return data.get(filename, '')
+def validate_ai_output(text, cfg, year_key='curr_year'):
+    """AI 생성 텍스트 내 점수가 cfg scores와 일치하는지 검증.
+
+    "N점중 M점" 또는 "M/N" 패턴을 찾아 실제 점수와 대조한다.
+    불일치 항목을 경고 출력하고 불일치 목록을 반환.
+    """
+    import re
+
+    scores = cfg['scores'][year_key]
+    # 영역별 (득점, 만점) 쌍
+    expected = {
+        '작업규칙': scores['rules'],
+        '작업태도': scores['attitude'],
+        '의사소통': scores['communication'],
+        '직무기술': scores['skills'],
+    }
+
+    # 전체 합산
+    total_score = sum(v[0] for v in expected.values())
+    total_max = sum(v[1] for v in expected.values())
+    total_pct = round(total_score / total_max * 100)
+
+    mismatches = []
+
+    # 패턴1: "N점중 M점" (만점중 득점)
+    for m in re.finditer(r'(\d+)점중\s*(\d+)점', text):
+        max_val, score_val = int(m.group(1)), int(m.group(2))
+        # 100점중 XX점 = 전체 환산
+        if max_val == 100:
+            if score_val != total_pct:
+                mismatches.append(f'전체 환산: 텍스트 {score_val}점 != 기대 {total_pct}점')
+            continue
+        # 영역별 매칭
+        matched = False
+        for name, (exp_sc, exp_tot) in expected.items():
+            if max_val == exp_tot:
+                if score_val != exp_sc:
+                    mismatches.append(f'{name}: 텍스트 {score_val}/{max_val} != 기대 {exp_sc}/{exp_tot}')
+                matched = True
+                break
+        if not matched and max_val not in [100]:
+            mismatches.append(f'미식별 점수: {score_val}/{max_val}')
+
+    # 패턴2: "XX%의 수행율" 또는 "XX%수행율"
+    for m in re.finditer(r'(\d+)%\s*(?:의\s*)?수행율', text):
+        pct_val = int(m.group(1))
+        valid_pcts = {round(v[0] / v[1] * 100) for v in expected.values()}
+        valid_pcts.add(total_pct)
+        if pct_val not in valid_pcts:
+            mismatches.append(f'수행율 {pct_val}%가 어떤 영역과도 불일치')
+
+    if mismatches:
+        for msg in mismatches:
+            print(f'  [수치검증] {msg}', flush=True)
+
+    return mismatches
+
+
+def load_eval_facts(cfg, mode='both'):
+    """현장평가 팩트를 로드하여 프롬프트용 데이터를 반환.
+
+    Args:
+        cfg: config dict
+        mode: 'both' (curr+prev, agent_03~05) 또는 'prev_only' (agent_02)
+
+    Returns:
+        dict with keys:
+            parsed_curr, parsed_prev, facts, changes,
+            weak_items, moderate_items, weak_detail, moderate_detail
+    """
+    from core.eval_parser import load_eval_parsed, format_for_prompt, compare_years
+
+    ty = cfg['target_year']
+    by = cfg['base_year']
+
+    parsed_prev = load_eval_parsed(by)
+    parsed_curr = None
+    facts = ''
+    changes = ''
+
+    if mode == 'prev_only':
+        facts = format_for_prompt(parsed_prev) if parsed_prev else ''
+        comm_source = parsed_prev
+    else:
+        parsed_curr = load_eval_parsed(ty)
+        facts = format_for_prompt(parsed_curr) if parsed_curr else ''
+        changes = compare_years(parsed_prev, parsed_curr) if (parsed_prev and parsed_curr) else ''
+        comm_source = parsed_curr
+
+    # 의사소통 약점/보통 항목 추출
+    comm_section = comm_source['sections'].get('의사소통', {}) if comm_source else {}
+    weak_items = [it for it in comm_section.get('items', []) if it['score'] <= 3]
+    moderate_items = [it for it in comm_section.get('items', []) if it['score'] == 4]
+    weak_detail = '\n'.join(f"  - {it['text']} ({it['score']}점)" for it in weak_items)
+    moderate_detail = '\n'.join(f"  - {it['text']} (4점)" for it in moderate_items)
+
+    prev_total_pct = parsed_prev['summary']['total_pct'] if parsed_prev else 'N/A'
+    curr_total_pct = parsed_curr['summary']['total_pct'] if parsed_curr else 'N/A'
+
+    return {
+        'parsed_curr': parsed_curr,
+        'parsed_prev': parsed_prev,
+        'prev_total_pct': prev_total_pct,
+        'curr_total_pct': curr_total_pct,
+        'facts': facts,
+        'changes': changes,
+        'weak_items': weak_items,
+        'moderate_items': moderate_items,
+        'weak_detail': weak_detail,
+        'moderate_detail': moderate_detail,
+    }
+
+
+def enrich_cfg_from_eval(cfg):
+    """eval_parser 결과로 cfg['scores']를 자동 갱신. 불일치 시 경고 출력.
+
+    config.json의 수동 입력 점수와 현장평가 파서 결과를 동기화한다.
+    파서 결과가 없으면 기존 cfg를 그대로 반환.
+    """
+    from core.eval_parser import load_eval_parsed
+
+    section_key_map = {
+        '작업규칙': 'rules',
+        '작업태도': 'attitude',
+        '의사소통': 'communication',
+        '직무기술': 'skills',
+    }
+
+    year_map = {
+        'curr_year': cfg['target_year'],
+        'prev_year': cfg['base_year'],
+    }
+
+    for cfg_key, year in year_map.items():
+        parsed = load_eval_parsed(year)
+        if not parsed:
+            continue
+
+        for section_name, score_key in section_key_map.items():
+            section = parsed['sections'].get(section_name)
+            if not section:
+                continue
+
+            old = cfg['scores'][cfg_key].get(score_key, [0, 0])
+            new = [section['score'], section['total']]
+
+            if old != new:
+                print(f'  [동기화] {year}년 {section_name}: config {old} → eval_parser {new}', flush=True)
+                cfg['scores'][cfg_key][score_key] = new
+
+    return cfg
 
 
 def calc_pct(score, total):
