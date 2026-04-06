@@ -56,6 +56,25 @@ def load_old_blocks(agent_name):
         return json.load(f)
 
 
+def _strip_markdown(text):
+    """AI 응답에서 마크다운 문법을 제거하여 HWP용 순수 텍스트로 변환."""
+    import re
+    # **굵게** / __굵게__
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    text = re.sub(r'__(.+?)__', r'\1', text)
+    # *기울임* / _기울임_
+    text = re.sub(r'\*(.+?)\*', r'\1', text)
+    text = re.sub(r'(?<!\w)_(.+?)_(?!\w)', r'\1', text)
+    # ### 헤딩
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    # --- 수평선
+    text = re.sub(r'^-{3,}$', '', text, flags=re.MULTILINE)
+    # 번호 목록 "1. " → "1. " 유지 (HWP에서도 자연스러움)
+    # 불릿 "- " → 제거
+    text = re.sub(r'^[\-\*]\s+', '', text, flags=re.MULTILINE)
+    return text
+
+
 def parse_ai_blocks(text, expected_keys=None):
     """AI 응답에서 [블록:key] 형식 블록을 파싱.
 
@@ -76,7 +95,7 @@ def parse_ai_blocks(text, expected_keys=None):
         match = re.match(r'\[블록[:\s]*([^\]]+)\]', line.strip().strip('*'))
         if match:
             if cur_key:
-                generated[cur_key] = '\n'.join(cur_lines).strip()
+                generated[cur_key] = _strip_markdown('\n'.join(cur_lines).strip())
             cur_key = match.group(1).strip()
             # 같은 줄에 내용이 이어질 수 있음
             rest = re.sub(r'\[블록[:\s]*[^\]]+\]\s*', '', line).strip()
@@ -85,7 +104,7 @@ def parse_ai_blocks(text, expected_keys=None):
             cur_lines.append(line)
 
     if cur_key:
-        generated[cur_key] = '\n'.join(cur_lines).strip()
+        generated[cur_key] = _strip_markdown('\n'.join(cur_lines).strip())
 
     if expected_keys:
         missing = [k for k in expected_keys if k not in generated or not generated[k]]
